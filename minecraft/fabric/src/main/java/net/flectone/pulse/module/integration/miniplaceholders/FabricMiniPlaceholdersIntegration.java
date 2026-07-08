@@ -41,6 +41,8 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import org.apache.commons.lang3.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -115,9 +117,9 @@ public class FabricMiniPlaceholdersIntegration implements FIntegration, PulseLis
         }
 
         TagResolver[] resolversArray = resolvers.toArray(new TagResolver[0]);
-        String message = replaceMiniPlaceholders(messageContext.message(), resolversArray, sender, receiver);
-
-        return event.withContext(messageContext.withMessage(message));
+        return event.withContext(messageContext.withMessage(
+                replaceMiniPlaceholders(messageContext.message(), resolversArray, sender, receiver)
+        ));
     }
 
     private Audience getAudienceOrDefault(UUID uuid, Audience defaultAudience) {
@@ -128,6 +130,7 @@ public class FabricMiniPlaceholdersIntegration implements FIntegration, PulseLis
     private String replaceMiniPlaceholders(String text, TagResolver[] resolvers, Audience sender, Audience receiver) {
         Matcher matcher = bracesPattern.matcher(text);
         StringBuilder result = new StringBuilder();
+
         while (matcher.find()) {
             String content = matcher.group(1);
 
@@ -137,9 +140,10 @@ public class FabricMiniPlaceholdersIntegration implements FIntegration, PulseLis
                     ? miniMessage.deserialize(content, resolvers)
                     : miniMessage.deserialize(content, new RelationalAudience<>(sender, receiver), resolvers);
 
-            // fix colors problems for custom RP
-            // https://github.com/BertTowne/InlineHeads
-            matcher.appendReplacement(result, miniMessage.serialize(parsedMessage).replaceAll("</#[0-9a-fA-F]+>", ""));
+            String json = GsonComponentSerializer.gson().serialize(parsedMessage);
+            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+
+            matcher.appendReplacement(result, Matcher.quoteReplacement("<" + MessagePipeline.MINI_PLACEHOLDERS_TAG + ":" + encoded + ">"));
         }
 
         matcher.appendTail(result);

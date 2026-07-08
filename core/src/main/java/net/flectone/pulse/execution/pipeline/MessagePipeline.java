@@ -26,7 +26,9 @@ import org.intellij.lang.annotations.Subst;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.Base64;
 import java.util.function.BiFunction;
 
 import static net.flectone.pulse.execution.pipeline.MessagePipeline.ReplacementTag.emptyResolver;
@@ -34,6 +36,8 @@ import static net.flectone.pulse.execution.pipeline.MessagePipeline.ReplacementT
 @Singleton
 @RequiredArgsConstructor(onConstructor = @__(@Inject))
 public class MessagePipeline {
+
+    public static final String MINI_PLACEHOLDERS_TAG = "flectone_miniplaceholders";
 
     private final FLogger fLogger;
     private final MiniMessage miniMessage;
@@ -123,13 +127,29 @@ public class MessagePipeline {
             return miniMessage.deserialize(
                     // always need to replace legacy § with & to avoid MiniMessage problems
                     Strings.CS.replace(eventContext.message(), "§", "&"),
-                    eventContext.tagResolver()
+                    TagResolver.resolver(eventContext.tagResolver(), miniPlaceholdersTagResolver())
             );
         } catch (Exception e) {
             fLogger.warning(e);
         }
 
         return Component.empty();
+    }
+
+    private TagResolver miniPlaceholdersTagResolver() {
+        return resolver(MINI_PLACEHOLDERS_TAG, (argumentQueue, _) -> {
+            if (!argumentQueue.hasNext()) return ReplacementTag.emptyTag();
+
+            try {
+                String encoded = argumentQueue.pop().value();
+                String json = new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
+
+                return Tag.selfClosingInserting(componentSerializer.fromJson(json));
+            } catch (Exception e) {
+                fLogger.warning(e);
+                return ReplacementTag.emptyTag();
+            }
+        });
     }
 
     public TagResolver messageTag(Component message) {
